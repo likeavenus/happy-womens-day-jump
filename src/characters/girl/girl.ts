@@ -86,7 +86,7 @@ export default class Girl extends Phaser.Physics.Matter.Sprite {
 
     // Установка коллизий с платформами
     // Настроим так, чтобы lizard взаимодействовал с платформами, но не сталкивался снизу
-    this.setCollidesWith([COLLISION_CATEGORIES.Disabled]); // будет коллизироваться с платформами
+    this.setCollidesWith([COLLISION_CATEGORIES.Disabled, COLLISION_CATEGORIES.Coin]); // будет коллизироваться с платформами
     this.setName("girl");
   }
 

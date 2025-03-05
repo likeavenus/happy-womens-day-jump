@@ -45,11 +45,16 @@ class Game extends Phaser.Scene {
   platform2!: MovingPlatform;
   platform3!: MovingPlatform;
 
-  private originalWidth: number;
-  private originalHeight: number;
+  private isMovingLeft: boolean = false;
+  private isMovingRight: boolean = false;
+  private moveSpeed: number = 5; // Скорость движения
+  private halfWidth: number = 0; // Половина ширины экрана
 
   private platforms!: Phaser.GameObjects.Group;
   private coins!: Phaser.GameObjects.Group;
+  private coinCount: number = 0;
+  private coinText!: Phaser.GameObjects.Text;
+
   private maxPlatforms: number = 10; // Максимальное количество платформ на экране
   private platformDistance: number = 300; // Расстояние между платформами
   private lastPlatformY: number = 0; // Y-координата последней платформы созданной
@@ -161,15 +166,64 @@ class Game extends Phaser.Scene {
     });
   }
 
+  private handleTouchInput(pointer: Phaser.Input.Pointer) {
+    // Определяем зону касания
+    const touchX = pointer.x; // Учитываем скролл камеры
+
+    // Если касание в левой половине экрана
+    if (touchX < this.halfWidth) {
+      this.isMovingLeft = true;
+      this.isMovingRight = false;
+    }
+    // Если касание в правой половине экрана
+    else {
+      this.isMovingLeft = false;
+      this.isMovingRight = true;
+    }
+  }
+
   create() {
     this.coins = this.add.group();
     createCoinAnims(this.anims);
     this.originalWidth = this.scale.width;
     this.originalHeight = this.scale.height;
-    // this.scale.on("resize", this.resize, this);
-    // this.resize({ width: this.scale.width, height: this.scale.height });
     this.platforms = this.add.group();
-    // this.initializePlatforms();
+
+    this.halfWidth = this.scale.width / 2;
+    this.input.addPointer(1);
+    // Обработка начала касания
+    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+      this.handleTouchInput(pointer);
+    });
+
+    // Обработка перемещения пальца
+    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+      if (pointer.isDown) {
+        this.handleTouchInput(pointer);
+        console.log("pointer:", pointer.x);
+      }
+    });
+
+    // Обработка окончания касания
+    this.input.on("pointerup", () => {
+      this.isMovingLeft = false;
+      this.isMovingRight = false;
+    });
+    // this.cameras.main.zoomTo(0.5);
+
+    this.coinText = this.add
+      .text(20, 20, "Монеты: 0", {
+        fontSize: "24px",
+        fill: "#FFD700",
+        fontFamily: "Arial",
+        stroke: "#000",
+        strokeThickness: 4,
+      })
+      .setScrollFactor(0)
+      .setDepth(1000);
+
+    this.add.existing(this.coinText);
+
     /** music */
     this.sound.pauseOnBlur = false;
     this.music = this.sound.add("music", {
@@ -230,7 +284,14 @@ class Game extends Phaser.Scene {
     this.generatePlatforms();
     this.generatePlatforms();
 
-    this.matter.world.on("collisionstart", this.handleCollision, this);
+    this.matter.world.on(
+      "collisionstart",
+      (event) => {
+        this.handleCollision(event);
+        this.handleCoinCollision(event);
+      },
+      this
+    );
 
     // Запуск генерации платформ
     this.time.addEvent({
@@ -246,14 +307,6 @@ class Game extends Phaser.Scene {
       callbackScope: this,
       loop: true,
     });
-
-    this.input.on("pointerdown", (pointer) => {});
-
-    const space = this.input.keyboard.addKey("space");
-
-    space.on("down", () => {});
-
-    // this.matter.add.mouseSpring();
 
     this.cameras.main.startFollow(this.lizard);
     // this.cameras.main.startFollow(this.lizard, true, 1, 1, 0.5, 0);
@@ -323,6 +376,17 @@ class Game extends Phaser.Scene {
     // console.log(this.platforms.getChildren()?.[0]?.y);
 
     // this.platforms.
+    if (this.isMovingLeft) {
+      this.lizard.flipX = false;
+      this.lizard.setVelocityX(-this.moveSpeed);
+    } else if (this.isMovingRight) {
+      this.lizard.flipX = true;
+
+      this.lizard.setVelocityX(this.moveSpeed);
+    } else {
+      // Плавная остановка при отсутствии ввода
+      this.lizard.setVelocityX(this.lizard.body.velocity.x * 0.9);
+    }
   }
 
   private createPlatform(x: number, y: number) {
@@ -346,23 +410,27 @@ class Game extends Phaser.Scene {
     const isMovingRight = this.lizard.body.velocity.x > 0; // Проверка движения вправо
 
     if (!isMovingUp) {
-      this.lizard.setCollidesWith([COLLISION_CATEGORIES.Platform]);
+      this.lizard.setCollidesWith([COLLISION_CATEGORIES.Platform, COLLISION_CATEGORIES.Coin]);
     } else {
-      this.lizard.setCollidesWith([COLLISION_CATEGORIES.Disabled]);
+      this.lizard.setCollidesWith([COLLISION_CATEGORIES.Disabled, COLLISION_CATEGORIES.Coin]);
     }
   }
 
   private createCoin(x: number, y: number) {
     // Создаем спрайт монеты
-    const coin = this.matter.add.sprite(x, y, "coin"); // 'coin' – это ключ текстуры
+    const coin = this.matter.add.sprite(x, y, "coin", undefined, {
+      label: "coin",
+    }); // 'coin' – это ключ текстуры
     coin.setScale(2);
     coin.setIgnoreGravity(true);
     coin.setBounce(0.5); // Установите отскок
-    coin.setCollisionCategory(0x0004); // Задайте категорию коллизии для монет
-    coin.setCollidesWith([0x0002]); // Они будут сталкиваться с лягушонком (персонажем)
+
     // Установите другие параметры, если необходимо
     coin.setData("label", "coin"); // Устанавливаем метаданные (например, для классификации)
     coin.anims.play("coin");
+
+    coin.setCollisionCategory(COLLISION_CATEGORIES.Coin);
+    coin.setCollidesWith([COLLISION_CATEGORIES.Player]);
     // Добавляем монету в группу, если используете группу для монет
     this.coins.add(coin); // Предполагается, что у вас есть группа coins
   }
@@ -425,47 +493,135 @@ class Game extends Phaser.Scene {
     this.cameras.main.setScroll(0, this.lizard.y - 200);
   }
 
-  resize(gameSize: { width: number; height: number }) {
-    const width = gameSize.width;
-    const height = gameSize.height;
+  private handleCoinCollision(event) {
+    event.pairs.forEach((pair) => {
+      const bodyA = pair.bodyA;
+      const bodyB = pair.bodyB;
 
-    // Обновление размеров камеры
-    this.cameras.resize(width, height);
+      // Получаем игровые объекты для проверки меток
+      const gameObjectA = bodyA.gameObject;
+      const gameObjectB = bodyB.gameObject;
 
-    // Обновление границ мира и физики
-    this.matter.world.setBounds(0, 0, width, height);
+      // Проверяем наличие меток
+      const isPlayerA = gameObjectA && gameObjectA.getData("label") === "girl";
+      const isCoinA = gameObjectA && gameObjectA.getData("label") === "coin";
+      const isPlayerB = gameObjectB && gameObjectB.getData("label") === "girl";
+      const isCoinB = gameObjectB && gameObjectB.getData("label") === "coin";
 
-    // Масштабирование игровых объектов
-    // this.scaleGameObjects(width, height);
+      const coinBody = [bodyA, bodyB].find((body) => body?.gameObject?.getData("label") === "coin");
+      const playerBody = [bodyA, bodyB].find((body) => body?.gameObject?.getData("label") === "girl");
+
+      // if ((isPlayerA && isCoinB) || (isPlayerB && isCoinA)) {
+      //   this.coins.remove(coin, true, true);
+      // }
+      if (coinBody && playerBody) {
+        const coin = coinBody.gameObject as Phaser.Physics.Matter.Sprite;
+
+        // 5. Анимация сбора монеты
+        // this.tweens.add({
+        //   targets: coin,
+        //   scale: { from: 2, to: 0 },
+        //   alpha: { from: 1, to: 0 },
+        //   duration: 300,
+        //   ease: "Power2",
+        //   onComplete: () => coin.destroy(),
+        // });
+
+        // 6. Увеличиваем счетчик и обновляем текст
+        this.coinCount++;
+        this.coinText.setText(`Монеты: ${this.coinCount}`);
+
+        // 7. Удаляем монету из группы
+        // this.coins.remove(coin, true, true);
+        coin.destroy(true);
+
+        // 8. Можно добавить звук сбора монеты
+        // this.sound.play('coin-sound');
+      }
+    });
+    // const bodyA = pair.bodyA;
+    // const bodyB = pair.bodyB;
+    // console.log("bodyA: ", bodyA);
+    // console.log("bodyB: ", bodyB);
+
+    // // 4. Определяем тела участников столкновения
+    // const coinBody = [bodyA, bodyB].find((body) => body?.gameObject?.getData("label") === "coin");
+    // // console.log("handleCoinCollision", coinBody);
+
+    // const playerBody = [bodyA, bodyB].find((body) => body?.gameObject?.getData("label") === "girl");
+
+    // if (coinBody && playerBody) {
+    //   const coin = coinBody.gameObject as Phaser.Physics.Matter.Sprite;
+
+    //   // 5. Анимация сбора монеты
+    //   this.tweens.add({
+    //     targets: coin,
+    //     scale: { from: 2, to: 0 },
+    //     alpha: { from: 1, to: 0 },
+    //     duration: 300,
+    //     ease: "Power2",
+    //     onComplete: () => coin.destroy(),
+    //   });
+
+    //   // 6. Увеличиваем счетчик и обновляем текст
+    //   this.coinCount++;
+    //   this.coinText.setText(`Монеты: ${this.coinCount}`);
+
+    //   // 7. Удаляем монету из группы
+    //   this.coins.remove(coin, true, true);
+
+    //   // 8. Можно добавить звук сбора монеты
+    //   // this.sound.play('coin-sound');
+    // }
   }
 
-  scaleGameObjects(width: number, height: number) {
-    // Расчет коэффициента масштабирования
-    const scaleX = width / this.originalWidth;
-    const scaleY = height / this.originalHeight;
-    const scale = Math.min(scaleX, scaleY);
+  // private handleCoinCollision(pair) {
+  //   const bodyA = pair.bodyA;
+  //   const bodyB = pair.bodyB;
 
-    // Масштабирование и позиционирование лизарда (персонажа)
-    if (this.lizard) {
-      this.lizard.setScale(scale);
-      this.lizard.setPosition(width / 2, height / 2);
-    }
+  //   // Определяем, какое тело является монетой, а какое - игроком
+  //   const coinBody = [bodyA, bodyB].find((body) => body.gameObject?.getData("label") === "coin");
 
-    // Масштабирование фона
-    if (this.backgrounds) {
-      this.backgrounds.forEach((bg) => {
-        bg.sprite.setDisplaySize(width, height);
-      });
-    }
+  //   const playerBody = [bodyA, bodyB].find((body) => body.gameObject?.getData("label") === "girl");
 
-    // Масштабирование других игровых объектов (платформы, сундуки и т.д.)
-    if (this.platforms) {
-      this.platforms.forEach((platform) => {
-        platform.setScale(scale);
-        // Обновите позицию платформы, если необходимо
-      });
-    }
-  }
+  //   if (coinBody && playerBody) {
+  //     const coin = coinBody.gameObject as Phaser.Physics.Matter.Sprite;
+
+  //     // Запускаем анимацию сбора монеты
+  //     this.playCoinCollectionEffect(coin);
+
+  //     // Увеличиваем счетчик
+  //     this.coinCount++;
+  //     this.coinText.setText(`Coins: ${this.coinCount}`);
+
+  //     // Уничтожаем монету
+  //     this.destroyCoin(coin);
+  //   }
+  // }
+  // private playCoinCollectionEffect(coin: Phaser.Physics.Matter.Sprite) {
+  //   // Анимация "подбора" монеты
+  //   this.tweens.add({
+  //     targets: coin,
+  //     scale: { from: 2, to: 0 },
+  //     alpha: { from: 1, to: 0 },
+  //     duration: 300,
+  //     ease: "Power2",
+  //     onComplete: () => coin.destroy(),
+  //   });
+
+  //   // Эффект частиц
+  //   const particles = this.add.particles("coin");
+  //   particles.createEmitter({
+  //     x: coin.x,
+  //     y: coin.y,
+  //     speed: { min: -200, max: 200 },
+  //     angle: { min: 0, max: 360 },
+  //     scale: { start: 0.5, end: 0 },
+  //     blendMode: "ADD",
+  //     lifespan: 500,
+  //     quantity: 5,
+  //   });
+  // }
 }
 
 const config: Phaser.Types.Core.GameConfig = {
