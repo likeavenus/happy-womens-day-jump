@@ -175,3 +175,13 @@ export const greetings = {
     text: "Светлых эмоций, тепла и радости тебе, Наташа! Пусть каждый день напоминает о твоей важности и ценности!",
   },
 };
+
+export enum COLLISION_CATEGORIES {
+  Disabled = 0,
+  Platform = 1,
+  Player = 2,
+  // Boulder = 4,
+  // LeftArm = 8,
+  // Vulture = 16,
+  // Vases = 32,
+}

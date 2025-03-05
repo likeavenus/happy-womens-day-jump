@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { COLLISION_CATEGORIES } from "../scenes/constants";
 
 export default class MovingPlatform extends Phaser.Physics.Matter.Image {
   startY = 0;
@@ -14,6 +15,15 @@ export default class MovingPlatform extends Phaser.Physics.Matter.Image {
     this.setFriction(1, 0, Infinity);
     this.setIgnoreGravity(true);
     this.setData("label", "platform");
+
+    this.setCollisionCategory(COLLISION_CATEGORIES.Platform);
+
+    // Установка категории, с которой платформа будет коллизироваться
+    // Установим, что она может сталкиваться с "lizard", установленным в следующей секции
+
+    // this.setCollidesWith([COLLISION_CATEGORIES.Player]);
+    this.setCollidesWith(COLLISION_CATEGORIES.Player);
+
     this.scene.add.existing(this);
   }
 
@@ -50,4 +60,12 @@ export default class MovingPlatform extends Phaser.Physics.Matter.Image {
       },
     });
   }
+
+  // update(...args: any[]): void {
+  //   const player = this.scene.children.getByName("girl");
+  //   console.log("player?.body?.position.y: ", player?.body?.position.y);
+
+  //   if (player?.body?.position.y < this.body?.position.y) {
+  //   }
+  // }
 }

@@ -8,10 +8,35 @@ import MovingPlatform from "../containers/MovingPlatform";
 import { TextBox } from "../containers/TextBox";
 import Chest from "../characters/chest/chest";
 import Intro from "./Intro";
+import { COLLISION_CATEGORIES } from "./constants";
+import { createCoinAnims } from "../characters/coin/anims";
 
 const MIN = Phaser.Math.DegToRad(-180);
 
+export const startCoords = {
+  x: 550,
+  // y: 1945,
+  y: 2200,
+};
+
 class Game extends Phaser.Scene {
+  playerController = {
+    blocked: {
+      left: false,
+      right: false,
+      bottom: false,
+    },
+    numTouching: {
+      left: 0,
+      right: 0,
+      bottom: 0,
+    },
+    sensors: {
+      bottom: null,
+      left: null,
+      right: null,
+    },
+  };
   hook!: Phaser.Physics.Matter.Image;
   lineGroup!: Phaser.Physics.Matter.Image[];
   cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -24,9 +49,11 @@ class Game extends Phaser.Scene {
   private originalHeight: number;
 
   private platforms!: Phaser.GameObjects.Group;
+  private coins!: Phaser.GameObjects.Group;
   private maxPlatforms: number = 10; // Максимальное количество платформ на экране
-  private platformDistance: number = 400; // Расстояние между платформами
+  private platformDistance: number = 300; // Расстояние между платформами
   private lastPlatformY: number = 0; // Y-координата последней платформы созданной
+  public firstPlatformY: number = 0; // Y-координата первой платформы созданной
 
   chest!: Chest;
   starsSummary = 0;
@@ -63,13 +90,86 @@ class Game extends Phaser.Scene {
     this.cursors = this.input.keyboard!.createCursorKeys();
   }
 
+  create2() {
+    const M = Phaser.Physics.Matter.Matter;
+    const w = this.lizard.width;
+    const h = this.lizard.height;
+
+    const originalX = this.lizard.x;
+    const originalY = this.lizard.y;
+
+    // Сенсоры для определения блокировки
+    this.playerController.sensors.bottom = M.Bodies.rectangle(0, h / 2, w * 0.75, 5, {
+      isSensor: true,
+      label: "bottomSensor",
+    });
+
+    this.playerController.sensors.left = M.Bodies.rectangle(-w * 0.45, 0, 5, h * 0.25, {
+      isSensor: true,
+      label: "leftSensor",
+    });
+
+    this.playerController.sensors.right = M.Bodies.rectangle(w * 0.45, 0, 5, h * 0.25, {
+      isSensor: true,
+      label: "rightSensor",
+    });
+
+    const compoundBody = M.Body.create({
+      parts: [this.lizard.body, this.playerController.sensors.bottom, this.playerController.sensors.left, this.playerController.sensors.right],
+      friction: 0.01,
+      restitution: 0.05,
+    });
+
+    // this.lizard.setExistingBody(compoundBody).setFixedRotation();
+    // M.Body.setPosition(compoundBody, { x: startCoords.x, y: startCoords.y });
+
+    // this.lizard.setExistingBody(compoundBody).setFixedRotation().setPosition(originalX, originalY);
+
+    // Обработка коллизий
+    this.matter.world.on("beforeupdate", () => {
+      this.playerController.numTouching.left = 0;
+      this.playerController.numTouching.right = 0;
+      this.playerController.numTouching.bottom = 0;
+    });
+
+    this.matter.world.on("collisionactive", (event) => {
+      const playerBody = this.lizard.body;
+      const left = this.playerController.sensors.left;
+      const right = this.playerController.sensors.right;
+      const bottom = this.playerController.sensors.bottom;
+
+      for (let i = 0; i < event.pairs.length; i++) {
+        const bodyA = event.pairs[i].bodyA;
+        const bodyB = event.pairs[i].bodyB;
+
+        if (bodyA === playerBody || bodyB === playerBody) {
+          continue;
+        } else if (bodyA === bottom || bodyB === bottom) {
+          this.playerController.numTouching.bottom += 1;
+        } else if ((bodyA === left && bodyB.isStatic) || (bodyB === left && bodyA.isStatic)) {
+          this.playerController.numTouching.left += 1;
+        } else if ((bodyA === right && bodyB.isStatic) || (bodyB === right && bodyA.isStatic)) {
+          this.playerController.numTouching.right += 1;
+        }
+      }
+    });
+
+    this.matter.world.on("afterupdate", () => {
+      this.playerController.blocked.right = this.playerController.numTouching.right > 0;
+      this.playerController.blocked.left = this.playerController.numTouching.left > 0;
+      this.playerController.blocked.bottom = this.playerController.numTouching.bottom > 0;
+    });
+  }
+
   create() {
+    this.coins = this.add.group();
+    createCoinAnims(this.anims);
     this.originalWidth = this.scale.width;
     this.originalHeight = this.scale.height;
     // this.scale.on("resize", this.resize, this);
     // this.resize({ width: this.scale.width, height: this.scale.height });
     this.platforms = this.add.group();
-
+    // this.initializePlatforms();
     /** music */
     this.sound.pauseOnBlur = false;
     this.music = this.sound.add("music", {
@@ -86,8 +186,6 @@ class Game extends Phaser.Scene {
       });
     }
     this.game.events.on(Phaser.Core.Events.BLUR, () => {
-      console.log("blur event");
-
       // this.handleLoseFocus();
     });
 
@@ -109,10 +207,6 @@ class Game extends Phaser.Scene {
     this.GROUND_COLLISION_GROUP = this.matter.world.nextCategory();
 
     const nameFromStorage = localStorage.getItem("happyName");
-    const startCoords = {
-      x: 550,
-      y: 1945,
-    };
 
     const testCoords = {
       x: 2400,
@@ -127,8 +221,14 @@ class Game extends Phaser.Scene {
     this.lizard = new Girl(this, startCoords.x, startCoords.y, girlKey as string, nameFromStorage as string, {
       label: "girl",
     });
+    this.create2();
 
-    this.createPlatform(this.scale.width / 2, this.scale.height - 100);
+    // this.lizard.setVelocityY(-15);
+    this.createPlatform(startCoords.x, startCoords.y + 200);
+    this.createPlatform(startCoords.x, startCoords.y);
+    this.createPlatform(Phaser.Math.Between(startCoords.x - 150, startCoords.x + 150), startCoords.y - 200);
+    this.generatePlatforms();
+    this.generatePlatforms();
 
     this.matter.world.on("collisionstart", this.handleCollision, this);
 
@@ -140,17 +240,12 @@ class Game extends Phaser.Scene {
       loop: true,
     });
 
-    this.platform = new MovingPlatform(this, this.lizard.x, this.lizard.y + 200, "platform", { label: "platform" }).setPipeline("Light2D");
-    this.platform2 = new MovingPlatform(this, 3000, 1200, "platform", {}).setPipeline("Light2D");
-    this.platform3 = new MovingPlatform(this, 4000, 1200, "platform", {}).setPipeline("Light2D");
-    this.chest = new Chest(this, this.platform3.x + 30, this.platform3.y - 40, "chest");
-
-    // this.platform.moveVertically(2200);
-    this.platform2.moveHorizontally(2000, -700);
-    // this.cameras.main.zoomTo(0.4);
-
-    this.lizard.setCollisionCategory(this.collisionCategory1);
-    this.lizard.setCollidesWith(this.collisionCategory1 | this.collisionCategory2 | this.collisionCategory4);
+    this.time.addEvent({
+      delay: 1000, // Интервал генерации новых платформ
+      callback: () => this.createCoin(Phaser.Math.Between(startCoords.x - 150, startCoords.x + 150), this.lastPlatformY - 60),
+      callbackScope: this,
+      loop: true,
+    });
 
     this.input.on("pointerdown", (pointer) => {});
 
@@ -158,9 +253,10 @@ class Game extends Phaser.Scene {
 
     space.on("down", () => {});
 
-    this.matter.add.mouseSpring();
+    // this.matter.add.mouseSpring();
 
     this.cameras.main.startFollow(this.lizard);
+    // this.cameras.main.startFollow(this.lizard, true, 1, 1, 0.5, 0);
 
     const { width, height } = this.scale;
     const darknessMask = this.add.graphics();
@@ -193,32 +289,6 @@ class Game extends Phaser.Scene {
       }
     });
 
-    this.matter.world.on("collisionstart", (e, bodyA, bodyB) => {
-      if ((bodyA === this.lizard.body && bodyB === this.chest.body) || (bodyA === this.chest.body && bodyB === this.lizard.body)) {
-        this.chest.openChest();
-        let textBox;
-        const greetings = localStorage.getItem("greetings") as string;
-        if (!textBox) {
-          let textBox = new TextBox(this, this.chest.x, this.chest.y - 200, 400, 260, greetings);
-
-          this.tweens.add({
-            targets: textBox,
-            alpha: 1,
-            ease: "Bounce", // 'Cubic', 'Elastic', 'Bounce', 'Back'
-            duration: 1000,
-            repeat: 0, // -1: infinity
-            yoyo: false,
-          });
-        }
-      }
-    });
-
-    this.emitter.on("lizard-dead", ({ x, y }: { x: number; y: number }) => {
-      for (let i = 0; i < 20; i++) {
-        this.stars.create(x, y, "star");
-      }
-    });
-
     this.lights.enable();
 
     this.lights.setAmbientColor(0x808080);
@@ -243,33 +313,61 @@ class Game extends Phaser.Scene {
     this.light.y = this.lizard.y;
 
     this.cleanPlatforms();
+    this.updatePlatformCollisions();
     this.checkPlayerHeight();
 
     const { left, right, up, space } = this.cursors;
 
     this.lizard.update(this.cursors);
+    // console.log(this.lizard.y);
+    // console.log(this.platforms.getChildren()?.[0]?.y);
+
+    // this.platforms.
   }
 
   private createPlatform(x: number, y: number) {
     const platform = new MovingPlatform(this, x, y, "platform", {});
     this.platforms.add(platform);
     this.lastPlatformY = y; // Обновляем координату последней платформы
+    this.firstPlatformY = this.platforms.getChildren()?.at?.(0).y;
   }
 
   private generatePlatforms() {
-    // Генерация платформ, когда игрок достаточно высок
-    const playerY = this.lizard.y;
+    // Создаем новую платформу, если игрок поднялся выше последней платформы
+    const x = Phaser.Math.Between(startCoords.x - 150, startCoords.x + 150);
+    const y = this.lastPlatformY - Phaser.Math.Between(300, 250); // Устанавливаем Y-координату для новой платформы
+    this.createPlatform(x, y); // Создаем платформу
+    this.lastPlatformY = y; // Обновляем последнюю Y-координату
+  }
 
-    // Создаем новую платформу, если игрок поднимается выше определённой Y
-    if (playerY < this.lastPlatformY - this.platformDistance) {
-      const x = Phaser.Math.Between(100, this.scale.width - 100);
-      const y = this.lastPlatformY - this.platformDistance;
-      this.createPlatform(x, y);
-      this.lastPlatformY = y; // обновляем координату последней платформы
+  private updatePlatformCollisions() {
+    const isMovingUp = this.lizard.body.velocity.y < 0;
+    const isMovingLeft = this.lizard.body.velocity.x < 0; // Проверка движения влево
+    const isMovingRight = this.lizard.body.velocity.x > 0; // Проверка движения вправо
+
+    if (!isMovingUp) {
+      this.lizard.setCollidesWith([COLLISION_CATEGORIES.Platform]);
+    } else {
+      this.lizard.setCollidesWith([COLLISION_CATEGORIES.Disabled]);
     }
   }
 
-  private handleCollision(event: MatterCollisionStart) {
+  private createCoin(x: number, y: number) {
+    // Создаем спрайт монеты
+    const coin = this.matter.add.sprite(x, y, "coin"); // 'coin' – это ключ текстуры
+    coin.setScale(2);
+    coin.setIgnoreGravity(true);
+    coin.setBounce(0.5); // Установите отскок
+    coin.setCollisionCategory(0x0004); // Задайте категорию коллизии для монет
+    coin.setCollidesWith([0x0002]); // Они будут сталкиваться с лягушонком (персонажем)
+    // Установите другие параметры, если необходимо
+    coin.setData("label", "coin"); // Устанавливаем метаданные (например, для классификации)
+    coin.anims.play("coin");
+    // Добавляем монету в группу, если используете группу для монет
+    this.coins.add(coin); // Предполагается, что у вас есть группа coins
+  }
+
+  private handleCollision(event) {
     event.pairs.forEach((pair) => {
       const bodyA = pair.bodyA;
       const bodyB = pair.bodyB;
@@ -286,17 +384,38 @@ class Game extends Phaser.Scene {
 
       if ((isPlayerA && isPlatformB) || (isPlayerB && isPlatformA)) {
         // Прыжок при столкновении
+
         if (this.lizard.body.velocity.y > 0) {
-          this.lizard.setVelocityY(-15); // Настройте силу прыжка
+          this.lizard.setVelocityY(-17); // Настройте силу прыжка
         }
       }
     });
   }
+
   private cleanPlatforms() {
-    // Удаление платформ, которые выше определённой высоты на экране
+    // Получаем текущую позицию лягушонка относительно высоты экрана
+
+    // Проходим по всем платформам
     this.platforms.getChildren().forEach((platform) => {
-      if (platform.y < this.lizard.y - this.scale.height) {
-        platform.destroy();
+      // Удаляем платформы, если их верхняя граница ниже видимости
+      // Используем platform.y + platform.height, чтобы проверить верхнюю границу
+      if (platform.y > this.cameras.main.scrollY + 1100) {
+        console.log("DESTROY PLATFORM:", platform);
+        platform.destroy(); // Удаляем платформу
+      }
+    });
+  }
+
+  private cleanCoins() {
+    // Получаем текущую позицию лягушонка относительно высоты экрана
+
+    // Проходим по всем платформам
+    this.coins.getChildren().forEach((platform) => {
+      // Удаляем платформы, если их верхняя граница ниже видимости
+      // Используем platform.y + platform.height, чтобы проверить верхнюю границу
+      if (platform.y > this.cameras.main.scrollY + 1100) {
+        console.log("DESTROY PLATFORM:", platform);
+        platform.destroy(); // Удаляем платформу
       }
     });
   }

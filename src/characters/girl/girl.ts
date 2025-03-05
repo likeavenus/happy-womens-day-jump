@@ -1,5 +1,7 @@
 import Phaser from "phaser";
 import { createKseniaAnims } from "./anims";
+import { COLLISION_CATEGORIES } from "../../scenes/constants";
+import { startCoords } from "../../scenes/Game";
 
 enum Direction {
   UP,
@@ -38,11 +40,11 @@ export default class Girl extends Phaser.Physics.Matter.Sprite {
     this.text.setDepth(11).setAlpha(0);
 
     const textFx = this.text.postFX.addGlow(0xffffff, 6, 0, false, 0.1, 24);
-    this.setRectangle(27, 55);
-    this.setOrigin(0.5, 0.56);
+    this.setRectangle(27, 45);
+    this.setOrigin(0.5, 0.43);
 
     this.girlSpriteKey = localStorage.getItem("girlKey");
-    console.log(this.girlSpriteKey);
+    // console.log(this.girlSpriteKey);
 
     this.setScale(2);
     this.setFixedRotation();
@@ -66,7 +68,7 @@ export default class Girl extends Phaser.Physics.Matter.Sprite {
 
     this.setOnCollide((data: MatterJS.ICollisionPair) => {
       this.isTouchingGround = true;
-      console.log(this.isTouchingGround);
+      // console.log(this.isTouchingGround);
 
       this.emitter.setPosition(this.x, this.y + this.height / 2);
       this.emitter.start();
@@ -80,6 +82,12 @@ export default class Girl extends Phaser.Physics.Matter.Sprite {
     // });
 
     // emitter.start(2000);
+    this.setCollisionCategory(COLLISION_CATEGORIES.Player);
+
+    // Установка коллизий с платформами
+    // Настроим так, чтобы lizard взаимодействовал с платформами, но не сталкивался снизу
+    this.setCollidesWith([COLLISION_CATEGORIES.Disabled]); // будет коллизироваться с платформами
+    this.setName("girl");
   }
 
   update(cursors: Phaser.Types.Input.Keyboard.CursorKeys): void {
@@ -129,7 +137,8 @@ export default class Girl extends Phaser.Physics.Matter.Sprite {
     });
 
     if (this.y > 3000) {
-      this.y = 1800;
+      // this.y = 1800;
+      this.setPosition(startCoords.x, this.scene.firstPlatformY - 200);
       this.setVelocityY(-10);
     }
   }
