@@ -35,6 +35,7 @@ void main( )
     
     float d = distance(fract(uv), vec2(0.5));
     
+    
     vec3 col = pal(length(uv0) - time);
     
     
@@ -43,5 +44,6 @@ void main( )
     
     d = 0.01 / d;
     finalColor += col * d;
+    finalColor += vec3(0.32, 0.04, 0.21);
     gl_FragColor = vec4(finalColor, 1.0);
 }
