@@ -4,6 +4,8 @@ import { COLLISION_CATEGORIES } from "../scenes/constants";
 export default class MovingPlatform extends Phaser.Physics.Matter.Image {
   startY = 0;
   startX = 0;
+  private verticalTween: Phaser.Tweens.Tween | null = null;
+  private horizontalTween: Phaser.Tweens.Tween | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, texture: string | Phaser.Textures.Texture, options) {
     super(scene.matter.world, x, y, texture, options);
@@ -18,10 +20,6 @@ export default class MovingPlatform extends Phaser.Physics.Matter.Image {
 
     this.setCollisionCategory(COLLISION_CATEGORIES.Platform);
 
-    // Установка категории, с которой платформа будет коллизироваться
-    // Установим, что она может сталкиваться с "lizard", установленным в следующей секции
-
-    // this.setCollidesWith([COLLISION_CATEGORIES.Player]);
     this.setCollidesWith(COLLISION_CATEGORIES.Player);
 
     this.scene.add.existing(this);
@@ -43,29 +41,72 @@ export default class MovingPlatform extends Phaser.Physics.Matter.Image {
       },
     });
   }
-
   moveHorizontally(duration: number, to: number) {
-    this.scene.tweens.addCounter({
+    this.horizontalTween = this.scene.tweens.addCounter({
       from: 0,
-      to: -to,
-      duration: duration,
+      to: to - this.startX,
+      duration,
       ease: Phaser.Math.Easing.Sine.InOut,
       repeat: -1,
       yoyo: true,
-      onUpdate: (tween, target) => {
-        const x = this.startX + target.value;
-        const dx = x - this.x;
-        this.x = x;
-        this.setVelocityX(dx);
+      onUpdate: (tween, { value }) => {
+        if (!this.scene || !this.body) return; // Проверка на существование
+        const x = this.startX + value;
+        this.setPosition(x, this.y);
+      },
+      onComplete: () => {
+        this.horizontalTween = null; // Очистка ссылки на Tween
       },
     });
   }
 
-  // update(...args: any[]): void {
-  //   const player = this.scene.children.getByName("girl");
-  //   console.log("player?.body?.position.y: ", player?.body?.position.y);
+  destroy() {
+    // Останавливаем анимации перед удалением объекта
+    if (this.verticalTween) {
+      this.verticalTween.stop();
+      this.verticalTween = null;
+    }
+    if (this.horizontalTween) {
+      this.horizontalTween.stop();
+      this.horizontalTween = null;
+    }
 
-  //   if (player?.body?.position.y < this.body?.position.y) {
-  //   }
+    // Вызываем родительский метод destroy
+    super.destroy();
+  }
+  // moveHorizontally(duration: number, to: number) {
+  //   this.scene.tweens.addCounter({
+  //     from: 0,
+  //     to: to - this.startX,
+  //     duration,
+  //     ease: Phaser.Math.Easing.Sine.InOut,
+  //     repeat: -1,
+  //     yoyo: true,
+  //     onUpdate: (tween, { value }) => {
+  //       if (this && this?.y) {
+  //         const x = this.startX + value;
+  //         console.log(this);
+  //         this.setPosition(x, this.y); // Используйте setPosition вместо прямого присваивания
+  //       }
+  //     },
+
+  //   });
+  // }
+
+  // moveHorizontally(duration: number, to: number) {
+  //   this.scene.tweens.addCounter({
+  //     from: this.x,
+  //     to: to,
+  //     duration: duration,
+  //     ease: Phaser.Math.Easing.Sine.InOut,
+  //     repeat: -1,
+  //     yoyo: true,
+  //     onUpdate: (tween, target) => {
+  //       const x = this.startX + target.value;
+  //       const dx = x - this.x;
+  //       this.x = x;
+  //       this.setVelocityX(dx);
+  //     },
+  //   });
   // }
 }

@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import glsl from "vite-plugin-glsl";
 
 const phasermsg = () => {
   return {
@@ -41,5 +42,25 @@ export default defineConfig({
   server: {
     port: 8080,
   },
-  plugins: [phasermsg()],
+  plugins: [
+    phasermsg(),
+    glsl({
+      include: [
+        // Glob pattern, or array of glob patterns to import
+        "**/*.glsl",
+        "**/*.wgsl",
+        "**/*.vert",
+        "**/*.frag",
+        "**/*.vs",
+        "**/*.fs",
+      ],
+      exclude: undefined, // Glob pattern, or array of glob patterns to ignore
+      warnDuplicatedImports: true, // Warn if the same chunk was imported multiple times
+      removeDuplicatedImports: false, // Automatically remove an already imported chunk
+      defaultExtension: "glsl", // Shader suffix when no extension is specified
+      compress: false, // Compress output shader code
+      watch: true, // Recompile shader on change
+      root: "/",
+    }),
+  ],
 });
